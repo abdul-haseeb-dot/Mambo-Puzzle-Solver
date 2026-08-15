@@ -99,6 +99,7 @@ class CSPSolver:
                     d1, d2 = self.domains[t1], self.domains[t2]
 
                     if conn.state == 1:
+                        # an equals connector forces both cells to share a symbol, so intersect their domains
                         common = d1.intersection(d2)
 
                         if len(d1) > len(common):
@@ -109,6 +110,7 @@ class CSPSolver:
                             self.domains[t2] = common
                             changed = True
 
+                        # if a fixed neighbor next to an equals pair would make 3 in a row, force the pair to the opposite symbol
                         for symbol in (1, 2):
                             opp_symbol = 2 if symbol == 1 else 1
                         
@@ -122,6 +124,7 @@ class CSPSolver:
                                         changed = True
 
                     elif conn.state == 2:
+                        # once one side of a cross connector is fixed, the other side is forced to the opposite symbol
                         if len(d1) == 1:
                             val = next(iter(d1))
                             opp_val = 1 if val == 2 else 2
@@ -141,6 +144,7 @@ class CSPSolver:
     def _check_triplets(self, v1, v2, v3):
         changed = False
 
+        # if two cells in a window of three share a symbol, the third is forced to the opposite one
         for a, b, c in [(v1, v2, v3), (v2, v3, v1), (v1, v3, v2)]:
             for symbol in (1, 2):
                 opp_symbol = 2 if symbol == 1 else 1
@@ -183,6 +187,7 @@ class CSPSolver:
         count_1 = sum(1 for var in line_vars if self.domains[var] == {1})
         count_2 = sum(1 for var in line_vars if self.domains[var] == {2})
 
+        # once a line hits its quota for a symbol, every remaining undecided cell in it is forced to the other symbol
         if count_1 == self.half_size:
             for var in line_vars:
                 if len(self.domains[var]) > 1:
@@ -197,6 +202,7 @@ class CSPSolver:
 
         unassigned = [var for var in line_vars if len(self.domains[var]) > 1]
 
+        # if a cell taking a symbol would complete the quota and force a three-in-a-row, rule that symbol out for it
         for symbol in (1, 2):
             current_count = count_1 if symbol == 1 else count_2
             opp_symbol = 2 if symbol == 1 else 1
@@ -215,6 +221,38 @@ class CSPSolver:
 
                     if self._has_three_in_a_row(temp_line, opp_symbol):
                         self.domains[test_var] = {opp_symbol}
+                        changed = True
+
+        # same as above but for a whole equals pair at once, since its two cells move together
+        line_set = set(line_vars)
+        for conn in self.connectors:
+            if conn.state != 1:
+                continue
+
+            t1, t2 = conn.tile1_pos, conn.tile2_pos
+            if t1 not in line_set or t2 not in line_set:
+                continue
+
+            if len(self.domains[t1]) == 1 or len(self.domains[t2]) == 1:
+                continue
+
+            for symbol in (1, 2):
+                current_count = count_1 if symbol == 1 else count_2
+                opp_symbol = 2 if symbol == 1 else 1
+
+                if current_count == self.half_size - 2:
+                    temp_line = []
+                    for var in line_vars:
+                        if var == t1 or var == t2:
+                            temp_line.append(symbol)
+                        elif len(self.domains[var]) == 1:
+                            temp_line.append(next(iter(self.domains[var])))
+                        else:
+                            temp_line.append(opp_symbol)
+
+                    if self._has_three_in_a_row(temp_line, opp_symbol):
+                        self.domains[t1] = {opp_symbol}
+                        self.domains[t2] = {opp_symbol}
                         changed = True
         return changed
 
